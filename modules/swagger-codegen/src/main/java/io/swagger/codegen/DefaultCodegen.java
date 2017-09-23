@@ -1647,19 +1647,7 @@ public class DefaultCodegen {
         if (p instanceof BaseIntegerProperty && !(p instanceof IntegerProperty) && !(p instanceof LongProperty)) {
             BaseIntegerProperty sp = (BaseIntegerProperty) p;
             property.isInteger = true;
-            /*if (sp.getEnum() != null) {
-                List<Integer> _enum = sp.getEnum();
-                property._enum = new ArrayList<String>();
-                for(Integer i : _enum) {
-                  property._enum.add(i.toString());
-                }
-                property.isEnum = true;
-
-                // legacy support
-                Map<String, Object> allowableValues = new HashMap<String, Object>();
-                allowableValues.put("values", _enum);
-                property.allowableValues = allowableValues;
-            }*/
+            property.isNumeric = true;
         }
         if (p instanceof IntegerProperty) {
             IntegerProperty sp = (IntegerProperty) p;
@@ -1681,6 +1669,7 @@ public class DefaultCodegen {
         if (p instanceof LongProperty) {
             LongProperty sp = (LongProperty) p;
             property.isLong = true;
+            property.isNumeric = true;
             if (sp.getEnum() != null) {
                 List<Long> _enum = sp.getEnum();
                 property._enum = new ArrayList<String>();
@@ -1706,6 +1695,8 @@ public class DefaultCodegen {
             property.isFile = true;
         }
         if (p instanceof UUIDProperty) {
+            property.isUuid = true;
+            // keep isString to true to make it backward compatible
             property.isString = true;
         }
         if (p instanceof ByteArrayProperty) {
@@ -1732,6 +1723,7 @@ public class DefaultCodegen {
         if (p instanceof DoubleProperty) {
             DoubleProperty sp = (DoubleProperty) p;
             property.isDouble = true;
+            property.isNumeric = true;
             if (sp.getEnum() != null) {
                 List<Double> _enum = sp.getEnum();
                 property._enum = new ArrayList<String>();
@@ -1749,6 +1741,7 @@ public class DefaultCodegen {
         if (p instanceof FloatProperty) {
             FloatProperty sp = (FloatProperty) p;
             property.isFloat = true;
+            property.isNumeric = true;
             if (sp.getEnum() != null) {
                 List<Float> _enum = sp.getEnum();
                 property._enum = new ArrayList<String>();
@@ -2181,6 +2174,10 @@ public class DefaultCodegen {
                         ArrayProperty ap = (ArrayProperty) responseProperty;
                         CodegenProperty innerProperty = fromProperty("response", ap.getItems());
                         op.returnBaseType = innerProperty.baseType;
+                    } else if (responseProperty instanceof MapProperty) {
+                        MapProperty ap = (MapProperty) responseProperty;
+                        CodegenProperty innerProperty = fromProperty("response", ap.getAdditionalProperties());
+                        op.returnBaseType = innerProperty.baseType;
                     } else {
                         if (cm.complexType != null) {
                             op.returnBaseType = cm.complexType;
@@ -2274,6 +2271,9 @@ public class DefaultCodegen {
                 } else if (param instanceof BodyParameter) {
                     bodyParam = p;
                     bodyParams.add(p.copy());
+                    if(definitions != null) {
+                        op.requestBodyExamples = new ExampleGenerator(definitions).generate(null, operation.getConsumes(), bodyParam.dataType);
+                    }
                 } else if (param instanceof FormParameter) {
                     formParams.add(p.copy());
                 }
@@ -2282,11 +2282,13 @@ public class DefaultCodegen {
                 }
             }
         }
+
         for (String i : imports) {
             if (needToImport(i)) {
                 op.imports.add(i);
             }
         }
+
         op.bodyParam = bodyParam;
         op.httpMethod = httpMethod.toUpperCase();
 
@@ -2301,6 +2303,7 @@ public class DefaultCodegen {
               }
           });
         }
+
         op.allParams = addHasMore(allParams);
         op.bodyParams = addHasMore(bodyParams);
         op.pathParams = addHasMore(pathParams);
@@ -2308,13 +2311,13 @@ public class DefaultCodegen {
         op.headerParams = addHasMore(headerParams);
         // op.cookieParams = cookieParams;
         op.formParams = addHasMore(formParams);
+        op.externalDocs = operation.getExternalDocs();
         // legacy support
         op.nickname = op.operationId;
 
         if (op.allParams.size() > 0) {
             op.hasParams = true;
         }
-        op.externalDocs = operation.getExternalDocs();
 
         // set Restful Flag
         op.isRestfulShow = op.isRestfulShow();
@@ -2373,12 +2376,16 @@ public class DefaultCodegen {
                 r.isBoolean = true;
             } else if (Boolean.TRUE.equals(cm.isLong)) {
                 r.isLong = true;
+                r.isNumeric = true;
             } else if (Boolean.TRUE.equals(cm.isInteger)) {
                 r.isInteger = true;
+                r.isNumeric = true;
             } else if (Boolean.TRUE.equals(cm.isDouble)) {
                 r.isDouble = true;
+                r.isNumeric = true;
             } else if (Boolean.TRUE.equals(cm.isFloat)) {
                 r.isFloat = true;
+                r.isNumeric = true;
             } else if (Boolean.TRUE.equals(cm.isByteArray)) {
                 r.isByteArray = true;
             } else if (Boolean.TRUE.equals(cm.isBinary)) {
@@ -2389,6 +2396,8 @@ public class DefaultCodegen {
                 r.isDate = true;
             } else if (Boolean.TRUE.equals(cm.isDateTime)) {
                 r.isDateTime = true;
+            } else if (Boolean.TRUE.equals(cm.isUuid)) {
+                r.isUuid = true;
             } else {
                 LOGGER.debug("Property type is not primitive: " + cm.datatype);
             }
@@ -2714,6 +2723,8 @@ public class DefaultCodegen {
             p.example = "2013-10-20";
         } else if (Boolean.TRUE.equals(p.isDateTime)) {
             p.example = "2013-10-20T19:20:30+01:00";
+        } else if (Boolean.TRUE.equals(p.isUuid)) {
+            p.example = "38400000-8cf0-11bd-b23e-10b96e4ef00d";
         } else if (Boolean.TRUE.equals(p.isFile)) {
             p.example = "/path/to/file.txt";
         }
@@ -3105,6 +3116,7 @@ public class DefaultCodegen {
                 final CodegenProperty cp = fromProperty(key, prop);
                 cp.required = mandatory.contains(key) ? true : false;
                 m.hasRequired = m.hasRequired || cp.required;
+                m.hasOptional = m.hasOptional || !cp.required;
                 if (cp.isEnum) {
                     // FIXME: if supporting inheritance, when called a second time for allProperties it is possible for
                     // m.hasEnums to be set incorrectly if allProperties has enumerations but properties does not.
@@ -3147,6 +3159,7 @@ public class DefaultCodegen {
                 if (Boolean.TRUE.equals(cp.isReadOnly)) {
                     m.readOnlyVars.add(cp);
                 } else { // else add to readWriteVars (list of properties)
+                    // FIXME: readWriteVars can contain duplicated properties. Debug/breakpoint here while running C# generator (Dog and Cat models)
                     m.readWriteVars.add(cp);
                 }
             }
@@ -3238,8 +3251,16 @@ public class DefaultCodegen {
             word = m.replaceAll(rep);
         }
 
-        // Remove all underscores
+        // Remove all underscores (underscore_case to camelCase)
         p = Pattern.compile("(_)(.)");
+        m = p.matcher(word);
+        while (m.find()) {
+            word = m.replaceFirst(m.group(2).toUpperCase());
+            m = p.matcher(word);
+        }
+
+        // Remove all hyphens (hyphen-case to camelCase)
+        p = Pattern.compile("(-)(.)");
         m = p.matcher(word);
         while (m.find()) {
             word = m.replaceFirst(m.group(2).toUpperCase());
@@ -3477,20 +3498,14 @@ public class DefaultCodegen {
      * @return Sanitized tag
      */
     public String sanitizeTag(String tag) {
-        // remove spaces and make strong case
-        String[] parts = tag.split(" ");
-        StringBuilder buf = new StringBuilder();
-        for (String part : parts) {
-            if (StringUtils.isNotEmpty(part)) {
-                buf.append(StringUtils.capitalize(part));
-            }
+        tag = camelize(sanitizeName(tag));
+
+        // tag starts with numbers
+        if (tag.matches("^\\d.*")) {
+            tag = "_" + tag;
         }
-        String returnTag = buf.toString().replaceAll("[^a-zA-Z0-9_]", "");
-        if (returnTag.matches("\\d.*")) {
-            return "_" + returnTag;
-        } else {
-            return returnTag;
-        }
+
+        return tag;
     }
 
     /**
@@ -3562,6 +3577,8 @@ public class DefaultCodegen {
             parameter.isPrimitiveType = true;
         } else if (Boolean.TRUE.equals(property.isFile)) {
             parameter.isFile = true;
+        } else if (Boolean.TRUE.equals(property.isUuid)) {
+            parameter.isUuid = true;
             // file is *not* a primitive type
             //parameter.isPrimitiveType = true;
         } else if (Boolean.TRUE.equals(property.isDate)) {
@@ -3658,7 +3675,7 @@ public class DefaultCodegen {
      * writes it back to additionalProperties to be usable as a boolean in
      * mustache files.
      *
-     * @param propertyKey
+     * @param propertyKey property key
      * @return property value as boolean
      */
     public boolean convertPropertyToBooleanAndWriteBack(String propertyKey) {

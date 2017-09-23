@@ -638,19 +638,21 @@ public abstract class AbstractJavaCodegen extends DefaultCodegen implements Code
             if (ap.getItems() == null) {
                 return null;
             }
+
             return String.format(pattern, getTypeDeclaration(ap.getItems()));
         } else if (p instanceof MapProperty) {
             final MapProperty ap = (MapProperty) p;
             final String pattern;
             if (fullJavaUtil) {
-                pattern = "new java.util.HashMap<String, %s>()";
+                pattern = "new java.util.HashMap<%s>()";
             } else {
-                pattern = "new HashMap<String, %s>()";
+                pattern = "new HashMap<%s>()";
             }
             if (ap.getAdditionalProperties() == null) {
                 return null;
             }
-            return String.format(pattern, getTypeDeclaration(ap.getAdditionalProperties()));
+
+            return String.format(pattern, String.format("String, %s", getTypeDeclaration(ap.getAdditionalProperties())));
         } else if (p instanceof IntegerProperty) {
             IntegerProperty dp = (IntegerProperty) p;
             if (dp.getDefault() != null) {
@@ -837,10 +839,12 @@ public abstract class AbstractJavaCodegen extends DefaultCodegen implements Code
             }
         }
 
-        if ("array".equals(property.containerType)) {
-          model.imports.add("ArrayList");
-        } else if ("map".equals(property.containerType)) {
-          model.imports.add("HashMap");
+        if (!fullJavaUtil) {
+            if ("array".equals(property.containerType)) {
+                model.imports.add("ArrayList");
+            } else if ("map".equals(property.containerType)) {
+                model.imports.add("HashMap");
+            }
         }
 
         if(!BooleanUtils.toBoolean(model.isEnum)) {
@@ -996,9 +1000,11 @@ public abstract class AbstractJavaCodegen extends DefaultCodegen implements Code
 
     @Override
     public String toEnumValue(String value, String datatype) {
-        if ("Integer".equals(datatype) || "Long".equals(datatype) ||
-            "Double".equals(datatype)) {
+        if ("Integer".equals(datatype) || "Double".equals(datatype)) {
             return value;
+        } else if ("Long".equals(datatype)) {
+            // add l to number, e.g. 2048 => 2048l
+            return value + "l";
         } else if ("Float".equals(datatype)) {
             // add f to number, e.g. 3.14 => 3.14f
             return value + "f";
